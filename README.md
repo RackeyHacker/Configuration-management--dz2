@@ -65,13 +65,21 @@
 • Конфигурация:
 
   • Скрипт ожидает наличие файла config.json, который должен содержать следующие ключи:
+  
   путь к репозиторию Git
+  
   список тегов для анализа
+  
   путь к инструменту визуализации (например, JAR-файл PlantUML)
 
 Пример файла connfig.json:
+
 {
+
   "visualization_tool": "C:\\visualizer\\plantuml-mit-1.2024.7.jar",
+  
   "repository_path": "C:\\gittest",
+  
   "tag_names": [ "v1.0", "v2.0" ]
+  
 }
