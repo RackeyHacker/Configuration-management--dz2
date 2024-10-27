@@ -98,4 +98,5 @@
 
 
 Для данноого кода были еще создан файл с тестами функций. Ниже прикреплен скриншот работы файла:
-![{CBD956E7-C494-4C81-8C66-77FB9FD50185}](https://github.com/user-attachments/assets/103b7846-e416-4f7b-a2fd-d300389af8fc)
+![{F5E0E1E9-A4B0-48CF-869E-65E3F4E63887}](https://github.com/user-attachments/assets/305aa58f-d404-496f-8ee0-af3db776669f)
+
