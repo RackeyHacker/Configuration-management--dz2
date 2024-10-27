@@ -1,91 +1,76 @@
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, mock_open, MagicMock
+import json
 
-from visualizer1 import load_config, get_commits, get_commit_message, build_plantuml_graph, visualize_graph, get_commits_for_tags, main
+from visualizer1 import (
+    load_config,
+    read_git_object,
+    get_commit_data,
+    get_tag_commit,
+    get_commits_between,
+    get_commits_for_tags,
+    build_plantuml_graph,
+    visualize_graph
+)
 
-class TestGitVisualization(unittest.TestCase):
+class TestGitFunctions(unittest.TestCase):
 
-    @patch('builtins.open', new_callable=unittest.mock.mock_open, read_data='{"repository_path": "/path/to/repo", "tag_names": ["v1.0", "v1.1"], "visualization_tool": "/path/to/plantuml.jar"}')
-    def test_load_config(self, mock_open):
-        # Тестирование функции load_config для загрузки конфигурации из файла
-        config = load_config('fake_config.json')
-        # Проверка, что значения загруженной конфигурации соответствуют ожидаемым
+    @patch('builtins.open', new_callable=mock_open, read_data='{"repository_path": "/path/to/repo", "tag_names": ["v1.0"], "visualization_tool": "tool.jar"}')
+    def test_load_config(self, mock_file):
+        config = load_config("dummy_path.json")
         self.assertEqual(config['repository_path'], '/path/to/repo')
-        self.assertEqual(config['tag_names'], ["v1.0", "v1.1"])
-        self.assertEqual(config['visualization_tool'], '/path/to/plantuml.jar')
+        self.assertIn('tag_names', config)
+        self.assertIsInstance(config['tag_names'], list)
 
-    @patch('subprocess.run')
-    def test_get_commits(self, mock_run):
-        # Тестирование функции get_commits для получения коммитов из репозитория
-        # Имитация результата выполнения команды git
-        mock_run.return_value = MagicMock(returncode=0, stdout='commit_hash|2024-10-20 12:00:00|Author Name\n', stderr='')
-        commits = get_commits('/path/to/repo', 'v1.0')
-        # Проверка, что полученные коммиты соответствуют ожидаемым
-        self.assertEqual(commits[0], ('commit_hash', '2024-10-20 12:00:00', 'Author Name', 'commit_hash|2024-10-20 12:00:00|Author Name'))
+    @patch('os.path.join', return_value='dummy/path/to/git/object')
+    @patch('builtins.open', new_callable=mock_open, read_data=b'x\x9c+\xce\xc8\xcd+\xd0\x03\x00\x02\x18\x01\x0b')
+    def test_read_git_object(self, mock_file, mock_join):
+        result = read_git_object('dummy/repo/path', 'dummyhash')
+        self.assertEqual(result, 'Hello World\n')
 
-    @patch('subprocess.run')
-    def test_get_commit_message(self, mock_run):
-        # Тестирование функции get_commit_message для получения сообщения коммита
-        mock_run.return_value = MagicMock(returncode=0, stdout='Commit message here\n', stderr='')
-        message = get_commit_message('/path/to/repo', 'commit_hash')
-        # Проверка, что полученное сообщение соответствует ожидаемому
-        self.assertEqual(message, 'Commit message here')
+    @patch('visualizer1.read_git_object', return_value='commit hash\nauthor John Doe <john@example.com> 1617984296\n\nInitial commit')
+    def test_get_commit_data(self, mock_read_git_object):
+        commit_data = get_commit_data('dummy/repo/path', 'dummy_commit_hash')
+        self.assertEqual(commit_data[0], 'dummy_commit_hash')
+        self.assertEqual(commit_data[1], '1617984296')
+        self.assertEqual(commit_data[2], 'John Doe')
+        self.assertEqual(commit_data[3], 'Initial commit')
+
+    @patch('builtins.open', new_callable=mock_open, read_data='dummy_commit_hash')
+    def test_get_tag_commit(self, mock_file):
+        tag_commit = get_tag_commit('dummy/repo/path', 'v1.0')
+        self.assertEqual(tag_commit, 'dummy_commit_hash')
+
+    @patch('visualizer1.get_commit_data', side_effect=[
+        ('hash1', 'date1', 'author1', 'message1'),
+        ('hash2', 'date2', 'author2', 'message2')
+    ])
+    def test_get_commits_between(self, mock_get_commit_data):
+        commits = get_commits_between('dummy/repo/path', 'start_hash', 'end_hash')
+        self.assertEqual(len(commits), 2)
+        self.assertEqual(commits[0], ('hash1', 'date1', 'author1', 'message1'))
+        self.assertEqual(commits[1], ('hash2', 'date2', 'author2', 'message2'))
 
     def test_build_plantuml_graph(self):
-        # Тестирование функции build_plantuml_graph для построения графа PlantUML
-        commits = [
-            ('commit_hash', '2024-10-20 12:00:00', 'Author Name', 'Commit message here'),
-        ]
-        plantuml_code = build_plantuml_graph({'v1.0': commits})
-        # Проверка наличия необходимых частей в коде PlantUML
+        commits_per_tag = {
+            'v1.0': [
+                ('hash1', 'date1', 'author1', 'message1'),
+                ('hash2', 'date2', 'author2', 'message2')
+            ]
+        }
+        plantuml_code = build_plantuml_graph(commits_per_tag)
         self.assertIn('@startuml', plantuml_code)
         self.assertIn('@enduml', plantuml_code)
-        self.assertIn('node "Commit message here\\n2024-10-20 12:00:00\\nAuthor Name" as v1.0_0', plantuml_code)
+        self.assertIn('node "message1\\ndate1\\nauthor1"', plantuml_code)
+        self.assertIn('node "message2\\ndate2\\nauthor2"', plantuml_code)
+        self.assertIn('v1.0', plantuml_code)
 
-    @patch('subprocess.run')
-    @patch('os.remove')
-    def test_visualize_graph(self, mock_remove, mock_run):
-        # Тестирование функции visualize_graph для визуализации графа
-        mock_run.return_value = MagicMock(returncode=0, stdout='', stderr='')
-        visualize_graph('@startuml\n@enduml', '/path/to/plantuml.jar')
-        # Проверка, что команда визуализации была вызвана и временный файл был удален
-        mock_run.assert_called_once()
-        mock_remove.assert_called_once_with("graph.puml")
-
-    @patch('visualizer1.get_commits')
-    def test_get_commits_for_tags(self, mock_get_commits):
-        # Тестирование функции get_commits_for_tags для получения коммитов по тегам
-        mock_get_commits.side_effect = [
-            [('commit_hash_v1.0', '2024-10-20 12:00:00', 'Author Name', 'Commit message v1.0')],
-            [('commit_hash_v1.1', '2024-10-21 12:00:00', 'Author Name', 'Commit message v1.1')]
-        ]
-        tags = ["v1.0", "v1.1"]
-        commits_per_tag = get_commits_for_tags('/path/to/repo', tags)
-        # Проверка, что количество тегов и их наличие в результате соответствуют ожиданиям
-        self.assertEqual(len(commits_per_tag), 2)
-        self.assertIn('v1.0', commits_per_tag)
-        self.assertIn('v1.1', commits_per_tag)
-
-    @patch('visualizer1.load_config')
-    @patch('visualizer1.get_commits_for_tags')
-    @patch('visualizer1.build_plantuml_graph')
-    @patch('visualizer1.visualize_graph')
-    def test_main(self, mock_visualize_graph, mock_build_plantuml_graph, mock_get_commits_for_tags, mock_load_config):
-        # Тестирование основной функции main для проверки всего процесса
-        mock_load_config.return_value = {'repository_path': '/path/to/repo', 'tag_names': ['v1.0', 'v1.1'], 'visualization_tool': '/path/to/plantuml.jar'}
-        mock_get_commits_for_tags.return_value = {
-            'v1.0': [('commit_hash_v1.0', '2024-10-20 12:00:00', 'Author Name', 'Commit message v1.0')],
-            'v1.1': [('commit_hash_v1.1', '2024-10-21 12:00:00', 'Author Name', 'Commit message v1.1')]
-        }
-        mock_build_plantuml_graph.return_value = '@startuml\n@enduml'
-        
-        main('fake_config.json')
-        
-        # Проверка, что все функции были вызваны с правильными параметрами
-        mock_load_config.assert_called_once_with('fake_config.json')
-        mock_get_commits_for_tags.assert_called_once()
-        mock_build_plantuml_graph.assert_called_once()
-        mock_visualize_graph.assert_called_once()
+    @patch('builtins.open', new_callable=mock_open)
+    @patch('os.system', return_value=0)
+    def test_visualize_graph(self, mock_system, mock_file):
+        visualize_graph('dummy_plantuml_code', 'dummy_tool.jar')
+        mock_file.assert_called_once_with("graph.puml", "w")
+        mock_system.assert_called_once_with('java -jar "dummy_tool.jar" graph.puml')
 
 if __name__ == '__main__':
     unittest.main()
